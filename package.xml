@@ -16,6 +16,7 @@
   <build_depend>libqt5-svg-dev</build_depend>
 
   <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>libqt5-svg</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
@@ -24,7 +25,7 @@
   <exec_depend>rosbag2_py</exec_depend>
   <exec_depend>rosidl_runtime_py</exec_depend>
   <exec_depend>ros2cli</exec_depend>
-  <exec_depend>libqt5-svg</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>tf2_msgs</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
