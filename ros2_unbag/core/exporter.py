@@ -100,6 +100,10 @@ class Exporter:
         # Pre-fetch export handlers and processors
         self.topic_handlers = {}
         self.topic_processors = {}
+        self.topic_filter_processors = {}     # run in producer
+        self.topic_transform_processors = {}   # run in workers
+        self._cross_topic_deps = set()
+        self._cross_topic_buffer = {}
 
         for topic, cfg in self.config.items():
 
@@ -117,8 +121,25 @@ class Exporter:
             processor_chain = self._prepare_processor_chain(topic, cfg, topic_type)
             if processor_chain:
                 self.topic_processors[topic] = processor_chain
+                # Split into filter (producer) and transform (worker) processors
+                filter_chain = []
+                transform_chain = []
+                for handler, args in processor_chain:
+                    if getattr(handler, 'is_filter', False):
+                        filter_chain.append((handler, args))
+                        # Collect cross-topic dependencies from the processor instance
+                        proc_inst = getattr(handler, '_processor_instance', None)
+                        if proc_inst:
+                            for dep_topic in proc_inst.get_cross_topic_deps(args):
+                                self._cross_topic_deps.add(dep_topic)
+                    else:
+                        transform_chain.append((handler, args))
+                self.topic_filter_processors[topic] = filter_chain
+                self.topic_transform_processors[topic] = transform_chain
             else:
                 self.topic_processors[topic] = []
+                self.topic_filter_processors[topic] = []
+                self.topic_transform_processors[topic] = []
 
             # Prepare naming and path
             name_tmpl = cfg['naming']
@@ -174,7 +195,7 @@ class Exporter:
         self.message_count = self.bag_reader.get_message_count()
         self.max_progress_count = sum(
             self.message_count.get(key, 0) for key in self.config)
-        self.bag_reader.set_filter(self.config.keys())
+        self.bag_reader.set_filter(set(self.config.keys()) | self._cross_topic_deps)
 
         # Max index for each topic
         self.max_index = {key: count - 1 for key, count in self.message_count.items()}
@@ -320,7 +341,9 @@ class Exporter:
 
     def _export_all_messages(self):
         """
-        Read and enqueue every message from configured topics without resampling, then signal workers to terminate.
+        Read and enqueue every message from configured topics without resampling,
+        applying filter processors before enqueue. Cross-topic dependencies are
+        buffered for filter processor access.
 
         Args:
             None
@@ -333,8 +356,15 @@ class Exporter:
             if res is None:
                 break
             topic, msg, _ = res
+
+            # Always update cross-topic buffer for filter processor dependencies
+            self._cross_topic_buffer[topic] = msg
+
             if topic in self.config:
-                self._enqueue_export_task(topic, msg)
+                # Apply filter processors; skip enqueue if dropped
+                msg = self._apply_filters(topic, msg)
+                if msg is not None:
+                    self._enqueue_export_task(topic, msg)
         self._signal_worker_termination()
 
 
@@ -361,6 +391,10 @@ class Exporter:
                 break
 
             topic, msg, _ = res
+
+            # Update cross-topic buffer for all topics (including dependencies)
+            self._cross_topic_buffer[topic] = msg
+
             if topic not in self.config:
                 continue
 
@@ -389,8 +423,23 @@ class Exporter:
                 frame[t] = sel_msg
 
             if frame:
-                for t, m in frame.items():
-                    self._enqueue_export_task(t, m, master_ts=master_ts)
+                # Apply master-topic filter first; if master is dropped
+                # the entire frame is discarded so all topics stay in sync.
+                master_filtered = self._apply_filters(master_topic, frame[master_topic])
+                if master_filtered is None:
+                    # Entire frame dropped because master was filtered out
+                    pass
+                else:
+                    # Enqueue master first (already filtered), then
+                    # filter and enqueue remaining topics. Skip master
+                    # in the inner loop to avoid double-filtering.
+                    self._enqueue_export_task(master_topic, master_filtered, master_ts=master_ts)
+                    for t, m in frame.items():
+                        if t == master_topic:
+                            continue
+                        m = self._apply_filters(t, m)
+                        if m is not None:
+                            self._enqueue_export_task(t, m, master_ts=master_ts)
             else:
                 for t in self.config:
                     if t == master_topic:
@@ -425,11 +474,15 @@ class Exporter:
                 break
 
             topic, msg, _ = res
+
+            # Update cross-topic buffer for all topics (including dependencies)
+            self._cross_topic_buffer[topic] = msg
+
             if topic not in self.config:
                 continue
 
             ts = get_time_from_msg(msg, return_datetime=False)
-            
+
             latest_ts_seen = max(latest_ts_seen, ts)
             buffers[topic].append((ts, msg))
 
@@ -505,8 +558,23 @@ class Exporter:
                 frame[t] = selected_msg
 
             if valid:
-                for t, m in frame.items():
-                    self._enqueue_export_task(t, m, master_ts=master_ts)
+                # Apply master-topic filter first; if master is dropped
+                # the entire frame is discarded so all topics stay in sync.
+                master_filtered = self._apply_filters(master_topic, frame[master_topic])
+                if master_filtered is None:
+                    # Entire frame dropped because master was filtered out
+                    pass
+                else:
+                    # Enqueue master first (already filtered), then
+                    # filter and enqueue remaining topics. Skip master
+                    # in the inner loop to avoid double-filtering.
+                    self._enqueue_export_task(master_topic, master_filtered, master_ts=master_ts)
+                    for t, m in frame.items():
+                        if t == master_topic:
+                            continue
+                        m = self._apply_filters(t, m)
+                        if m is not None:
+                            self._enqueue_export_task(t, m, master_ts=master_ts)
             else:
                 for t in self.config:
                     if t == master_topic:
@@ -647,8 +715,9 @@ class Exporter:
                     break
                 topic, msg, full_path, fmt, metadata = task
 
-                # Use pre-fetched processor if available
-                processor_chain = self.topic_processors.get(topic) or []
+                # Use pre-fetched transform processors (filter processors already
+                # ran in the producer)
+                processor_chain = self.topic_transform_processors.get(topic) or []
                 for handler, args in processor_chain:
                     msg = handler(msg=msg, **args)
 
@@ -688,6 +757,24 @@ class Exporter:
                     # Handle exceptions in progress callback
                     self.logger.error(f"Error in progress callback: {done}/{self.max_progress_count}")
                     pass
+
+    def _apply_filters(self, topic, msg):
+        """
+        Run filter processor chain for a topic. Returns the (possibly modified)
+        message, or None if the message should be skipped.
+
+        Args:
+            topic: Topic name (str).
+            msg: ROS2 message instance.
+
+        Returns:
+            The message if it passes all filters, or None to skip.
+        """
+        for handler, args in self.topic_filter_processors.get(topic, []):
+            msg = handler(msg=msg, cross_topic_data=self._cross_topic_buffer, **args)
+            if msg is None:
+                return None
+        return msg
 
     def _prepare_processor_chain(self, topic, cfg, topic_type):
         """

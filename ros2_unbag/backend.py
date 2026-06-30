@@ -170,7 +170,8 @@ def list_processors_for_topic_type(topic_type: str) -> list[dict[str, Any]]:
                     "doc": doc,
                 }
             )
-        processors.append({"name": name, "args": args})
+        handler = Processor.get_handler(topic_type, name)
+        processors.append({"name": name, "args": args, "is_filter": getattr(handler, 'is_filter', False)})
     return processors
 
 

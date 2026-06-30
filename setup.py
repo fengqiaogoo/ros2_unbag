@@ -51,6 +51,9 @@ setup(
     license="MIT",
     packages=find_packages(include=["ros2_unbag", "ros2_unbag.*"]),
     entry_points={
+        "console_scripts": [
+            "ros2-unbag = ros2_unbag.export:main",
+        ],
         "ros2cli.command": [
             "unbag = ros2_unbag.export:ExportCommand",
         ],
