@@ -22,6 +22,7 @@
 
 from datetime import datetime
 import logging
+from pathlib import Path
 import re
 
 logger = logging.getLogger(__name__)
@@ -75,7 +76,7 @@ def substitute_placeholders(template_string: str, replacements: dict) -> str:
         return template_string
     return _PLACEHOLDER_RE.sub(lambda m: replacements[m.group(1)], template_string)
 
-_STRFTIME_RE = re.compile(r"%(?!name|index|timestamp|master_timestamp)[A-Za-z]")
+_STRFTIME_RE = re.compile(r"%(?!name|index|timestamp|master_timestamp|bag_dir|bag_name)[A-Za-z]")
 def is_strftime_in_template(template_string: str) -> bool:
     """
     Check if the template string contains strftime format specifiers.
@@ -87,3 +88,32 @@ def is_strftime_in_template(template_string: str) -> bool:
         bool: True if the string contains strftime specifiers, False otherwise.
     """
     return bool(_STRFTIME_RE.search(template_string))
+
+
+def resolve_bag_placeholders(template_string: str, bag_path: str) -> str:
+    """
+    Replace %bag_dir and %bag_name placeholders using a bag file path.
+
+    %bag_dir  — parent directory of the bag file.
+    %bag_name — bag filename without extension (for .db3/.mcap files)
+                or directory name (for split-bag directories).
+
+    Args:
+        template_string (str): String that may contain %bag_dir / %bag_name.
+        bag_path (str): Resolved path to the bag file or split-bag directory.
+
+    Returns:
+        str: Template string with bag-related placeholders replaced.
+    """
+    if not template_string or "%" not in template_string:
+        return template_string
+
+    bag = Path(bag_path).resolve()
+    if bag.is_dir():
+        bag_name = bag.name
+        bag_dir = str(bag.parent)
+    else:
+        bag_name = bag.stem
+        bag_dir = str(bag.parent)
+
+    return template_string.replace("%bag_name", bag_name).replace("%bag_dir", bag_dir)

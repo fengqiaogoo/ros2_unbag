@@ -42,6 +42,7 @@ from ros2_unbag.core.bag_reader import BagReader
 from ros2_unbag.core.exporter import Exporter
 from ros2_unbag.core.routines.base import ExportRoutine, ExportMode
 from ros2_unbag.core.utils.bag_utils import resolve_bag_path
+from ros2_unbag.core.utils.file_utils import resolve_bag_placeholders
 import ros2_unbag.core.processors
 import ros2_unbag.core.routines
 
@@ -229,6 +230,9 @@ class ExportCommand(CommandExtension):
         else:
             config = self._validate_and_build_config(args, bag_reader)
 
+        # Resolve %bag_dir / %bag_name and enforce absolute output paths
+        self._resolve_topic_paths(config, bag_path, output_dir=args.output_dir)
+
         global_config = config.pop("__global__", {"cpu_percentage": 80.0})
         Exporter(bag_reader, config, global_config, progress_callback=self.progress).run()
         print("Export complete.")
@@ -305,7 +309,7 @@ class ExportCommand(CommandExtension):
                 naming = provided_naming
             config[topic] = {
                 "format": fmt,
-                "path": args.output_dir or ".",
+                "path": args.output_dir or "%bag_name_unbag",
                 "subfolder": subdir.strip("/"),
                 "naming": naming
             }
@@ -353,7 +357,46 @@ class ExportCommand(CommandExtension):
                 config[topic].setdefault("processors", []).append(processor_entry)
 
         return config
-    
+
+
+    def _resolve_topic_paths(self, config, bag_path, output_dir=None):
+        """
+        Resolve %bag_dir/%bag_name placeholders in every topic's ``path``
+        field and ensure the result is an absolute path.
+
+        Relative paths are made absolute against ``output_dir`` (if provided)
+        or the bag file's parent directory.
+
+        Args:
+            config: Per-topic export configuration dict (mutated in place).
+            bag_path: Resolved path to the bag file or split-bag directory.
+            output_dir: Optional base output directory from --output-dir/-o.
+        """
+        bag = Path(bag_path).resolve()
+        # bag_path is already resolved — for both files and directories,
+        # the containing folder is always the parent
+        bag_dir = str(bag.parent)
+
+        for topic, cfg in config.items():
+            if topic == "__global__":
+                continue
+            raw_path = cfg.get("path", "")
+            if not raw_path:
+                continue
+
+            # Replace bag-related placeholders
+            resolved = resolve_bag_placeholders(raw_path, bag_path)
+
+            # Make relative paths absolute
+            if not Path(resolved).is_absolute():
+                if output_dir:
+                    base = Path(output_dir).resolve()
+                else:
+                    base = Path(bag_dir)
+                resolved = str(base / resolved)
+
+            cfg["path"] = resolved
+
 
     def install_routine(self, path):
         """
