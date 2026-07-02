@@ -28,13 +28,18 @@ class Processor:
     # Registry for processing steps by message type and format
     registry = defaultdict(list)
 
-    def __init__(self, msg_types, formats):
+    def __init__(self, msg_types, formats, is_filter=False, cross_topic_arg_keys=None):
         """
         Register processing steps for the specified message types and formats.
 
         Args:
             msg_types: Message type string or list of message types.
             formats: List of supported processor formats.
+            is_filter: If True, this processor is a filter that can return None to skip
+                       a message. Filter processors run in the producer (single process)
+                       and have access to persistent_storage and cross_topic_data.
+            cross_topic_arg_keys: List of argument names whose values are topic names
+                                  that this processor depends on for cross-topic data.
 
         Returns:
             None
@@ -42,11 +47,19 @@ class Processor:
         self.msg_types = msg_types if isinstance(msg_types,
                                                  list) else [msg_types]
         self.formats = formats
+        self.is_filter = is_filter
+        self._cross_topic_arg_keys = cross_topic_arg_keys or []
         self.__class__.register(self)
 
     def __call__(self, func):
         """
         Decorate a function to assign it as this processor’s handler.
+
+        The wrapper provides persistent_storage (a mutable dict shared across all
+        invocations of this processor) and passes cross_topic_data through to the
+        underlying function. Filter processors may return None to signal that the
+        message should be skipped; transform processors should always return a
+        valid message.
 
         Args:
             func: Function to be used as the processor handler.
@@ -54,8 +67,44 @@ class Processor:
         Returns:
             Processor: The processor instance itself.
         """
-        self.func = func
-        return self
+        storage = {}
+        sig = inspect.signature(func)
+        accepts_cross_topic = 'cross_topic_data' in sig.parameters
+
+        if accepts_cross_topic:
+            def wrapper(msg, cross_topic_data=None, **kwargs):
+                wrapper.persistent_storage = storage
+                return func(msg, cross_topic_data=cross_topic_data, **kwargs)
+        else:
+            def wrapper(msg, cross_topic_data=None, **kwargs):
+                wrapper.persistent_storage = storage
+                return func(msg, **kwargs)
+
+        wrapper.persistent_storage = storage
+        wrapper.is_filter = self.is_filter
+        wrapper._processor_instance = self
+        wrapper._original_func = func
+        wrapper.__name__ = func.__name__
+        wrapper.__doc__ = func.__doc__
+        self.func = wrapper
+        return wrapper
+
+    def get_cross_topic_deps(self, args):
+        """
+        Extract cross-topic dependency topic names from processor arguments.
+
+        Args:
+            args: Dictionary of processor argument values.
+
+        Returns:
+            list: Topic names that this processor depends on for cross-topic data.
+        """
+        deps = []
+        for key in self._cross_topic_arg_keys:
+            val = args.get(key)
+            if val:
+                deps.append(val)
+        return deps
 
     @classmethod
     def register(cls, routine):
@@ -104,6 +153,19 @@ class Processor:
         return None
 
     @classmethod
+    def _get_original_func(cls, handler):
+        """
+        Return the original undecorated function if available, otherwise the handler itself.
+
+        Args:
+            handler: The wrapped processor handler function.
+
+        Returns:
+            function: The original function for signature inspection.
+        """
+        return getattr(handler, '_original_func', handler)
+
+    @classmethod
     def get_args(cls, msg_type, fmt):
         """
         Return a dict mapping argument names to a tuple: (inspect.Parameter, docstring_description).
@@ -119,8 +181,10 @@ class Processor:
         if not handler:
             return None
 
-        signature = inspect.signature(handler)
-        docstring = inspect.getdoc(handler)
+        # Inspect the original function's signature (not the wrapper)
+        original = cls._get_original_func(handler)
+        signature = inspect.signature(original)
+        docstring = inspect.getdoc(original)
         param_docs = cls._extract_param_docs(docstring)
 
         return {
