@@ -59,7 +59,7 @@
         "cpu_percentage": 80,
         "resample_config": {
             "association": "nearest",
-            "discard_eps": 0.04,
+            "discard_eps": 0.1,
             "master_topic": "/lidar_points"
         }
     }
