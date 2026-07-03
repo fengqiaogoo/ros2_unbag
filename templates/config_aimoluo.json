@@ -1,0 +1,66 @@
+{
+    "/camera0/image_raw/compressed": {
+        "format": "image/jpeg",
+        "naming": "%timestamp",
+        "path": "%bag_name_unbag",
+        "processors": [
+        ],
+        "subfolder": "camera/cam_front"
+    },
+    "/camera1/image_raw/compressed": {
+        "format": "image/jpeg",
+        "naming": "%timestamp",
+        "path": "%bag_name_unbag",
+        "processors": [
+        ],
+        "subfolder": "camera/cam_rear"
+    },
+    "/camera2/image_raw/compressed": {
+        "format": "image/jpeg",
+        "naming": "%timestamp",
+        "path": "%bag_name_unbag",
+        "processors": [
+        ],
+        "subfolder": "camera/cam_right"
+    },
+    "/camera3/image_raw/compressed": {
+        "format": "image/jpeg",
+        "naming": "%timestamp",
+        "path": "%bag_name_unbag",
+        "processors": [
+        ],
+        "subfolder": "camera/cam_left"
+    },
+    "/lidar_points": {
+        "format": "pointcloud/pcd",
+        "naming": "%timestamp",
+        "path": "%bag_name_unbag",
+        "processors": [
+            {
+                "args": {
+                    "distance_threshold": "0.5",
+                    "pose_topic": "/pose",
+                    "time_threshold": "3"
+                },
+                "name": "keyframe_filter"
+            }
+        ],
+        "subfolder": "lidar/lidar_front"
+    },
+    "/pose": {
+        "format": "text/json@single_file",
+        "naming": "%name",
+        "path": "%bag_name_unbag",
+        "processors": [
+        ],
+        "subfolder": "pose"
+    },
+    "__global__": {
+        "cpu_percentage": 80,
+        "resample_config": {
+            "association": "nearest",
+            "discard_eps": 0.04,
+            "master_topic": "/lidar_points"
+        }
+    }
+}
