@@ -41,6 +41,7 @@ from ros2_unbag.core.exporter import Exporter
 from ros2_unbag.core.processors import Processor
 from ros2_unbag.core.routines import ExportMode, ExportRoutine
 from ros2_unbag.core.utils.bag_utils import resolve_bag_path
+from ros2_unbag.core.utils.file_utils import resolve_bag_placeholders
 
 
 _MODE_TO_NAME = {
@@ -170,7 +171,8 @@ def list_processors_for_topic_type(topic_type: str) -> list[dict[str, Any]]:
                     "doc": doc,
                 }
             )
-        processors.append({"name": name, "args": args})
+        handler = Processor.get_handler(topic_type, name)
+        processors.append({"name": name, "args": args, "is_filter": getattr(handler, 'is_filter', False)})
     return processors
 
 
@@ -185,7 +187,7 @@ def default_topic_config(topic_type: str, base_dir: str | None = None) -> dict[s
     Returns:
         dict[str, Any]: Default per-topic export configuration.
     """
-    base_path = str(Path(base_dir) if base_dir else Path.cwd())
+    base_path = str(Path(base_dir) if base_dir else "%bag_name_unbag")
     formats = ExportRoutine.get_formats(topic_type)
     default_fmt = formats[0] if formats else ""
     naming = "%name_%index"
@@ -233,7 +235,7 @@ def inspect_bag(bag_path: str, base_dir: str | None = None) -> dict[str, Any]:
                 "count": message_counts.get(topic_name, 0),
                 "formats": list_formats_for_topic_type(topic_type),
                 "processors": list_processors_for_topic_type(topic_type),
-                "default_config": default_topic_config(topic_type, base_dir),
+                "default_config": default_topic_config(topic_type, base_dir=None),
             }
         )
 
@@ -303,6 +305,17 @@ def validate_export_config(
         merged["format"] = canonicalize_format_selection(topic_type, fmt, mode_name)
 
         merged["path"] = str((merged.get("path") or "").strip())
+
+        # Resolve %bag_dir / %bag_name and make path absolute
+        if merged["path"]:
+            merged["path"] = resolve_bag_placeholders(merged["path"], resolved_path)
+            if not Path(merged["path"]).is_absolute():
+                if base_dir:
+                    base = Path(base_dir).resolve()
+                else:
+                    base = Path(resolved_path).resolve().parent
+                merged["path"] = str(base / merged["path"])
+
         merged["subfolder"] = str((merged.get("subfolder") or "").strip("/"))
         merged["naming"] = str((merged.get("naming") or "").strip())
 

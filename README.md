@@ -49,9 +49,18 @@ For high‑throughput workflows, *ros2 unbag* can spawn multiple worker processe
 
 Whether you prefer the **GUI for interactive exploration** or `ros2 unbag <args>` for automated pipelines, you have a flexible, extensible way to turn bag files into the data you need.
 
-## Installation 
+## Installation
 
-### From source
+There are two ways to install *ros2 unbag*, depending on your needs:
+
+| Approach | GUI | CLI | Requires ROS 2 |
+|----------|:---:|:---:|:--------------:|
+| **colcon build** (recommended) | ✅ | ✅ | Yes |
+| **pip install** | ❌ | ✅ | No (lightweight) |
+
+> **Note:** The GUI is a C++ Qt application. It is only available when building via **colcon**. If installed via pip, `ros2-unbag` **must** be called with explicit CLI arguments (a bag path and `--export` or `--config`), otherwise it will fail trying to locate the GUI executable.
+
+### A. colcon build (Full installation with GUI)
 
 1. Create a ROS 2 workspace and clone the repository into `src`:
 
@@ -84,6 +93,28 @@ Whether you prefer the **GUI for interactive exploration** or `ros2 unbag <args>
    ```bash
    source install/setup.bash
    ```
+
+After sourcing, you can launch the GUI by simply running `ros2 unbag`, or use the CLI with `ros2 unbag <bag_path> --export ...`.
+
+### B. pip install (CLI only, no GUI)
+
+If you only need the CLI for automated batch processing and don't require the GUI, you can install via pip without a full ROS 2 workspace:
+
+```bash
+git clone https://github.com/ika-rwth-aachen/ros2_unbag.git
+cd ros2_unbag
+pip install -e .
+```
+
+> **Important:** With pip-only installation, the `ros2_unbag_gui` C++ executable is **not** built. Running `ros2-unbag` without any arguments will fail with:
+> ```
+> RuntimeError: Could not locate the 'ros2_unbag_gui' executable.
+> ```
+> You must always provide a bag path and export spec. Example:
+>
+> ```bash
+> ros2-unbag my_bag.db3 --export /topic:csv --output-dir ./output
+> ```
 
 ### Docker 
 
@@ -161,6 +192,21 @@ Example:
 ```bash
 ros2 unbag rosbag/rosbag.mcap 
     --output-dir /docker-ros/ws/example/ --export /lidar/point_cloud:pointcloud/pcd:lidar --export /radar/point_cloud:pointcloud/pcd:radar --resample /lidar/point_cloud:last,0.2
+```
+
+### Debug: CLI test for keyframe_filter
+
+```bash
+ros2-unbag ~/datasets/aimolo/home_scenes/OJ二楼会议室/my_record_20260618_170052/my_record_20260618_170052_0.db3 \
+  --output-dir ~/datasets/test_export \
+  --export /lidar_points:pointcloud/pcd:lidar \
+  --export /camera0/image_raw/compressed:image/png:camera0 \
+  --export /camera1/image_raw/compressed:image/png:camera1 \
+  --export /camera2/image_raw/compressed:image/png:camera2 \
+  --export /camera3/image_raw/compressed:image/png:camera3 \
+  --export /pose:text/json:pose \
+  --resample /lidar_points:nearest,0.1 \
+  -p /lidar_points:keyframe_filter:pose_topic=/pose,distance_threshold=0.5,time_threshold=3.0
 ```
 
 ⚠️ If you specify the `--config` option (e.g., `--config configs/my_config.json`), the tool will load all export settings from the given JSON configuration file. In this case, all other command-line options except `<path_to_rosbag>` are ignored, and the export process is fully controlled by the config file. The `<path_to_rosbag>` is always required in CLI use.
