@@ -66,7 +66,7 @@ There are two ways to install *ros2 unbag*, depending on your needs:
 
    ```bash
    mkdir -p ros2_ws/src
-   git clone https://git.aimoga-robot.com/qiaofenggit/ros2_unbag.git ros2_ws/src/ros2_unbag
+   git clone https://github.com/fengqiaogoo/ros2_unbag.git ros2_ws/src/ros2_unbag
    cd ros2_ws
    ```
 
@@ -101,7 +101,7 @@ After sourcing, you can launch the GUI by simply running `ros2 unbag`, or use th
 If you only need the CLI for automated batch processing and don't require the GUI, you can install via pip without a full ROS 2 workspace:
 
 ```bash
-git clone https://git.aimoga-robot.com/qiaofenggit/ros2_unbag.git
+git clone https://github.com/fengqiaogoo/ros2_unbag.git
 cd ros2_unbag
 pip install -e .
 ```
