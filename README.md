@@ -66,7 +66,7 @@ There are two ways to install *ros2 unbag*, depending on your needs:
 
    ```bash
    mkdir -p ros2_ws/src
-   git clone https://github.com/ika-rwth-aachen/ros2_unbag.git ros2_ws/src/ros2_unbag
+   git clone https://git.aimoga-robot.com/qiaofenggit/ros2_unbag.git ros2_ws/src/ros2_unbag
    cd ros2_ws
    ```
 
@@ -101,7 +101,7 @@ After sourcing, you can launch the GUI by simply running `ros2 unbag`, or use th
 If you only need the CLI for automated batch processing and don't require the GUI, you can install via pip without a full ROS 2 workspace:
 
 ```bash
-git clone https://github.com/ika-rwth-aachen/ros2_unbag.git
+git clone https://git.aimoga-robot.com/qiaofenggit/ros2_unbag.git
 cd ros2_unbag
 pip install -e .
 ```
@@ -173,10 +173,10 @@ In addition to these required arguments, the following optional flags are availa
 | --------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | -------------- |
 | **`bag`**                   | `<path>`                                 | Path to ROS 2 bag file (`.db3` / `.mcap`) or split bag folder.                                                                    | CLI mode (required)                | –              |
 | **`-e, --export`**          | `/topic:format[:subdir]`                 | Topic → format export spec. Repeatable.                                                                                           | CLI mode (required or `--config`)  | –              |
-| **`-o, --output-dir`**      | `<directory>`                            | Base directory for all exports.                                                                                                   | Optional                           | `.`            |
+| **`-o, --output-dir`**      | `<directory>`                            | Base directory for all exports. Supports `%bag_dir` (parent of bag file) and `%bag_name` (bag filename without extension) placeholders. | Optional                           | `%bag_name_unbag` |
 | **`--naming`**              | `<pattern>`                              | Filename pattern. Supports `%name`, `%index`, `%timestamp`, `%master_timestamp` (when resampling), and strftime (e.g. `%Y-%m-%d_%H-%M-%S`) using ROS timestamps | Optional                           | `%name_%index` |
 | **`--resample`**            | `/master:association[,discard_eps]`.     | Time‑align to master topic. `association` = `last` or `nearest`; `nearest` needs a numeric `discard_eps`.                         | Optional                           | –              |
-| **`-p, --processing`**      | `/topic:processor[:arg=value,…]`         | Pre‑export processor spec; repeat to build ordered chains (executed in the order provided).                                       | Optional                           | –              |
+| **`-p, --processing`**      | `/topic:processor[:arg=value,…]`         | Pre‑export processor spec; repeat to build ordered chains (executed in the order provided). Supports **filter processors** (e.g., `keyframe_filter`) that can filter messages based on cross-topic data like pose. | Optional                           | –              |
 | **`--cpu-percentage`**      | `<float>`                                | % of cores for parallel export (0–100). Use `0` for single‑threaded.                                                              | Optional                           | `80.0`         |
 | **`--config`**              | `<config.json>`                          | JSON config file path. Overrides all other args (except `bag`).                                                                   | Optional                           | –              |
 | **`--gui`**                 | (flag)                                   | Launch Qt GUI. If no `bag`/`--export`/`--config`, GUI is auto‑started.                                                            | Optional                           | `false`        |
@@ -188,26 +188,31 @@ In addition to these required arguments, the following optional flags are availa
 | **`--uninstall-processor`** | (flag)                                   | Interactive removal of an installed processor.                                                                                    | Standalone                         | -              |
 | **`--help`**                | (flag)                                   | Show usage information and exit.                                                                                                  | Standalone                         | -              |
 
+> 💡 **Auto output path:** The default `--output-dir` is `%bag_name_unbag`, which creates a `_unbag` directory next to your bag file (e.g., `my_record.db3` → `./my_record_unbag/`). You can use `%bag_name` and `%bag_dir` placeholders in your output path: `--output-dir %bag_dir/processed/%bag_name` exports to the same directory as the bag, under a `processed/<bag_name>/` subfolder.
+
 Example:
 ```bash
 ros2 unbag rosbag/rosbag.mcap 
     --output-dir /docker-ros/ws/example/ --export /lidar/point_cloud:pointcloud/pcd:lidar --export /radar/point_cloud:pointcloud/pcd:radar --resample /lidar/point_cloud:last,0.2
 ```
 
-### Debug: CLI test for keyframe_filter
+### Filter Processor Example
+
+Filter processors reduce the number of exported messages by evaluating a condition per frame. The built-in `keyframe_filter` extracts spatially or temporally distinct frames by comparing pose data from a reference topic:
 
 ```bash
-ros2-unbag ~/datasets/aimolo/home_scenes/OJ二楼会议室/my_record_20260618_170052/my_record_20260618_170052_0.db3 \
-  --output-dir ~/datasets/test_export \
+ros2 unbag my_bag.db3 \
+  --output-dir ./export \
   --export /lidar_points:pointcloud/pcd:lidar \
   --export /camera0/image_raw/compressed:image/png:camera0 \
-  --export /camera1/image_raw/compressed:image/png:camera1 \
-  --export /camera2/image_raw/compressed:image/png:camera2 \
-  --export /camera3/image_raw/compressed:image/png:camera3 \
   --export /pose:text/json:pose \
   --resample /lidar_points:nearest,0.1 \
   -p /lidar_points:keyframe_filter:pose_topic=/pose,distance_threshold=0.5,time_threshold=3.0
 ```
+
+**How it works:** The `keyframe_filter` on `/lidar_points` reads pose data from `/pose` (cross-topic dependency). For each resampled frame, it computes the distance traveled since the last keyframe. If the distance exceeds `0.5` m **or** the elapsed time exceeds `3.0` s, the frame is exported; otherwise it is dropped. Dropped master-topic frames cascade to all other topics in that frame, ensuring consistent multi-sensor exports.
+
+> 💡 **Tip:** When you don't specify `--output-dir`, the output is automatically placed in a `_unbag` directory next to your bag file (e.g., `my_bag.db3` → `./my_bag_unbag/`).
 
 ⚠️ If you specify the `--config` option (e.g., `--config configs/my_config.json`), the tool will load all export settings from the given JSON configuration file. In this case, all other command-line options except `<path_to_rosbag>` are ignored, and the export process is fully controlled by the config file. The `<path_to_rosbag>` is always required in CLI use.
 
