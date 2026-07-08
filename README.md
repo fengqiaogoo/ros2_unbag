@@ -22,7 +22,6 @@
 - [Introduction](#introduction)
 - [Installation](#installation)  
   - [From Source](#from-source)  
-  - [Docker](#docker)  
 - [Quick Start](#quick-start)  
   - [GUI Mode](#gui-mode-recommended-for-first-time-users)  
   - [CLI Mode](#cli-mode-for-automation--scripting)  
@@ -67,6 +66,8 @@ There are two ways to install *ros2 unbag*, depending on your needs:
    ```bash
    mkdir -p ros2_ws/src
    git clone https://github.com/fengqiaogoo/ros2_unbag.git ros2_ws/src/ros2_unbag
+   # or via GitLab:
+   git clone https://git.aimoga-robot.com/qiaofenggit/ros2_unbag.git ros2_ws/src/ros2_unbag
    cd ros2_ws
    ```
 
@@ -102,6 +103,8 @@ If you only need the CLI for automated batch processing and don't require the GU
 
 ```bash
 git clone https://github.com/fengqiaogoo/ros2_unbag.git
+# or via GitLab:
+git clone https://git.aimoga-robot.com/qiaofenggit/ros2_unbag.git
 cd ros2_unbag
 pip install -e .
 ```
@@ -115,31 +118,6 @@ pip install -e .
 > ```bash
 > ros2-unbag my_bag.db3 --export /topic:csv --output-dir ./output
 > ```
-
-### Docker 
-
-You can skip local installs by running our ready‑to‑go Docker image:
-
-```bash
-docker pull ghcr.io/ika-rwth-aachen/ros2_unbag:latest
-```
-
-This image comes with ROS 2 Jazzy and *ros2 unbag* preinstalled. To launch it:
-
-1. Clone or download the `docker/docker-compose.yml` in this repo.
-2. Run:
-
-   ```bash
-   docker compose -f docker/docker-compose.yml up
-   ```
-3. If you need the GUI, first enable X11 forwarding on your host (at your own risk!):
-
-   ```bash
-   xhost +local:
-   ```
-
-   Then start the container as above—the GUI will appear on your desktop.
-
 
 ## Quick Start
 
@@ -215,6 +193,63 @@ ros2 unbag my_bag.db3 \
 > 💡 **Tip:** When you don't specify `--output-dir`, the output is automatically placed in a `_unbag` directory next to your bag file (e.g., `my_bag.db3` → `./my_bag_unbag/`).
 
 ⚠️ If you specify the `--config` option (e.g., `--config configs/my_config.json`), the tool will load all export settings from the given JSON configuration file. In this case, all other command-line options except `<path_to_rosbag>` are ignored, and the export process is fully controlled by the config file. The `<path_to_rosbag>` is always required in CLI use.
+
+### Config File with keyframe_filter
+
+The same filter can be defined in a JSON config file (see `templates/config_aimoluo.json` for a complete example). Below is a minimal extract:
+
+```json
+{
+  "/lidar_points": {
+    "format": "pointcloud/pcd",
+    "naming": "%timestamp",
+    "path": "%bag_name_unbag",
+    "subfolder": "lidar",
+    "processors": [
+      {
+        "name": "keyframe_filter",
+        "args": {
+          "pose_topic": "/pose",
+          "distance_threshold": "0.5",
+          "time_threshold": "3.0"
+        }
+      }
+    ]
+  },
+  "/pose": {
+    "format": "text/json@single_file",
+    "naming": "%name",
+    "passthrough": true,
+    "path": "%bag_name_unbag",
+    "subfolder": "pose",
+    "processors": []
+  },
+  "__global__": {
+    "cpu_percentage": 80.0,
+    "resample_config": {
+      "association": "nearest",
+      "discard_eps": 0.02,
+      "master_topic": "/lidar_points"
+    }
+  }
+}
+```
+
+**keyframe_filter parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `pose_topic` | string | `/odom` | Topic providing pose data (`Odometry`, `PoseStamped`, or `TransformStamped`) |
+| `distance_threshold` | float | `0.5` | Minimum distance (meters) between keyframes |
+| `time_threshold` | float | `3.0` | Minimum time (seconds) between keyframes when stationary |
+
+### Passthrough – Bypass Resampling
+
+The **Passthrough** option (checkbox in the GUI, `"passthrough": true` in config files) tells the exporter to skip time-alignment for a topic. All messages are exported as-is, independently of the master resample topic.
+
+This is especially useful for the **pose/odometry topic** that drives resampling: you want it exported in full for reference, but it must not be resampled against itself (which would drop most of its own messages).
+
+In the GUI, the Passthrough checkbox appears between **Naming** and **Processors** in the topic editor panel.
 
 ## Documentation
 
