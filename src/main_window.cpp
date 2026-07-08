@@ -355,6 +355,13 @@ void MainWindow::buildUi() {
   namingEdit_ = new QLineEdit(topicFormWidget_);
   formLayout->addRow(QStringLiteral("Naming"), namingEdit_);
 
+  passthroughCheckBox_ = new QCheckBox(QStringLiteral("Passthrough – bypass resampling, export every message"), topicFormWidget_);
+  passthroughCheckBox_->setToolTip(
+      QStringLiteral("When enabled, this topic's messages are exported as-is without being "
+                     "synchronized to the master resample topic. Useful for the pose/odometry "
+                     "topic that drives resampling but should itself be exported in full."));
+  formLayout->addRow(QString(), passthroughCheckBox_);
+
   processorChainWidget_ = new ProcessorChainWidget(topicFormWidget_);
   formLayout->addRow(QStringLiteral("Processors"), processorChainWidget_);
 
@@ -579,6 +586,7 @@ void MainWindow::buildUi() {
   connect(subdirEdit_, &QLineEdit::editingFinished, this, &MainWindow::saveCurrentTopicConfig);
   connect(namingEdit_, &QLineEdit::editingFinished, this, &MainWindow::saveCurrentTopicConfig);
   connect(processorChainWidget_, &ProcessorChainWidget::changed, this, &MainWindow::saveCurrentTopicConfig);
+  connect(passthroughCheckBox_, &QCheckBox::toggled, this, &MainWindow::saveCurrentTopicConfig);
   updateUiAvailability();
 }
 
@@ -1198,6 +1206,7 @@ QJsonObject MainWindow::currentEditorConfig() const {
   config.insert(QStringLiteral("subfolder"), subfolder);
   config.insert(QStringLiteral("naming"), namingEdit_->text().trimmed());
   config.insert(QStringLiteral("processors"), processorChainWidget_->chain());
+  config.insert(QStringLiteral("passthrough"), passthroughCheckBox_->isChecked());
   return config;
 }
 
@@ -1233,6 +1242,9 @@ void MainWindow::applyEditorConfig(const QString &topicName, const QJsonObject &
 
   processorChainWidget_->setProcessorDefinitions(meta.value(QStringLiteral("processors")).toArray());
   processorChainWidget_->setChain(config.value(QStringLiteral("processors")).toArray());
+  passthroughCheckBox_->blockSignals(true);
+  passthroughCheckBox_->setChecked(config.value(QStringLiteral("passthrough")).toBool(false));
+  passthroughCheckBox_->blockSignals(false);
   updateBadgeState(isTopicChecked(topicName));
   updateValidationStyles();
 }

@@ -141,6 +141,26 @@ class ExportCommand(CommandExtension):
             return self._run_cli(args)
 
 
+    @staticmethod
+    def _system_qt_plugin_path():
+        """Return the correct system Qt platform plugin path.
+
+        cv2 may override ``QT_QPA_PLATFORM_PLUGIN_PATH`` with its own
+        bundled plugins (which cannot load).  Resolve the canonical
+        system path so the GUI subprocess is always launched with a
+        working ``libqxcb.so``.
+        """
+        candidates = [
+            "/usr/lib/x86_64-linux-gnu/qt5/plugins",
+            "/usr/lib/x86_64-linux-gnu/qt6/plugins",
+            "/usr/lib/qt5/plugins",
+            "/usr/lib/qt6/plugins",
+        ]
+        for candidate in candidates:
+            if (Path(candidate) / "platforms" / "libqxcb.so").is_file():
+                return candidate
+        return os.environ.get("QT_QPA_PLATFORM_PLUGIN_PATH", "")
+
     def _run_gui(self):
         """
         Launch the GUI application for exporting ROS2 bag data.
@@ -152,7 +172,9 @@ class ExportCommand(CommandExtension):
             int: Exit code from the Qt application.
         """
         executable = self._locate_gui_executable()
-        completed = subprocess.run([executable], check=False)
+        env = os.environ.copy()
+        env["QT_QPA_PLATFORM_PLUGIN_PATH"] = self._system_qt_plugin_path()
+        completed = subprocess.run([executable], env=env, check=False)
         return completed.returncode
 
     def _locate_gui_executable(self):

@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <QCheckBox>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMainWindow>
@@ -208,6 +209,7 @@ private:
   QLineEdit *subdirEdit_;
   QLineEdit *namingEdit_;
   ProcessorChainWidget *processorChainWidget_;
+  QCheckBox *passthroughCheckBox_;
   QLabel *placeholderLabel_;
   QLabel *placeholderHintLabel_;
   QLabel *helpTextLabel_;

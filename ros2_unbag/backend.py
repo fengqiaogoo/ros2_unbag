@@ -204,6 +204,7 @@ def default_topic_config(topic_type: str, base_dir: str | None = None) -> dict[s
         "path": base_path,
         "subfolder": "%name",
         "naming": naming,
+        "passthrough": False,
         "processors": [],
     }
 
