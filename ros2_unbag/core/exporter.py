@@ -97,6 +97,9 @@ class Exporter:
               f"{len(self.sequential_topics)} for sequential topics.")
         self._enqueued_files = set()
 
+        # Passthrough topics bypass resampling and export every message independently
+        self._passthrough_topics = {t for t, cfg in self.config.items() if cfg.get("passthrough", False)}
+
         # Pre-fetch export handlers and processors
         self.topic_handlers = {}
         self.topic_processors = {}
@@ -373,6 +376,7 @@ class Exporter:
         """
         Resampling strategy: 'last'.
         Collect the latest message from each topic and align frames based on latest state when master message arrives.
+        Passthrough topics are exported immediately and skip frame assembly.
 
         Args:
             master_topic: Topic name to use as master (str).
@@ -398,6 +402,13 @@ class Exporter:
             if topic not in self.config:
                 continue
 
+            # Passthrough: export immediately, skip frame assembly
+            if topic in self._passthrough_topics:
+                msg = self._apply_filters(topic, msg)
+                if msg is not None:
+                    self._enqueue_export_task(topic, msg)
+                continue
+
             ts = get_time_from_msg(msg, return_datetime=False)
 
             latest_messages[topic] = (ts, msg)
@@ -408,10 +419,12 @@ class Exporter:
             master_ts = ts
             frame = {}
 
-            # Attempt to assemble a complete frame
+            # Attempt to assemble a complete frame (skip passthrough topics)
             for t in self.config:
                 if t == master_topic:
                     frame[t] = msg
+                    continue
+                if t in self._passthrough_topics:
                     continue
                 if t not in latest_messages:
                     frame = None
@@ -431,18 +444,17 @@ class Exporter:
                     pass
                 else:
                     # Enqueue master first (already filtered), then
-                    # filter and enqueue remaining topics. Skip master
-                    # in the inner loop to avoid double-filtering.
+                    # filter and enqueue remaining topics (skip passthrough).
                     self._enqueue_export_task(master_topic, master_filtered, master_ts=master_ts)
                     for t, m in frame.items():
-                        if t == master_topic:
+                        if t == master_topic or t in self._passthrough_topics:
                             continue
                         m = self._apply_filters(t, m)
                         if m is not None:
                             self._enqueue_export_task(t, m, master_ts=master_ts)
             else:
                 for t in self.config:
-                    if t == master_topic:
+                    if t == master_topic or t in self._passthrough_topics:
                         continue
                     if t not in latest_messages or (
                         discard_eps_ns is not None and abs(master_ts - latest_messages[t][0]) > discard_eps_ns
@@ -455,6 +467,7 @@ class Exporter:
         """
         Resampling strategy: 'nearest'.
         Buffer all messages and, when a master message arrives, find the closest message from each other topic.
+        Passthrough topics are exported immediately and skip frame assembly.
 
         Args:
             master_topic: Topic name to use as master (str).
@@ -467,6 +480,9 @@ class Exporter:
         buffers = defaultdict(deque)
         latest_ts_seen = 0
         discard_eps_ns = int(discard_eps * 1e9)
+        # Track per-topic latest timestamps seen (for non-passthrough topics only)
+        non_passthrough_config = {t: cfg for t, cfg in self.config.items()
+                                  if t not in self._passthrough_topics}
 
         while True:
             res = self.bag_reader.read_next_message()
@@ -479,6 +495,13 @@ class Exporter:
             self._cross_topic_buffer[topic] = msg
 
             if topic not in self.config:
+                continue
+
+            # Passthrough: export immediately, skip buffer
+            if topic in self._passthrough_topics:
+                msg = self._apply_filters(topic, msg)
+                if msg is not None:
+                    self._enqueue_export_task(topic, msg)
                 continue
 
             ts = get_time_from_msg(msg, return_datetime=False)
@@ -541,9 +564,9 @@ class Exporter:
             frame = {master_topic: candidate_msg}
             valid = True
 
-            # Find best match from each topic
+            # Find best match from each topic (skip passthrough)
             for t in self.config:
-                if t == master_topic:
+                if t == master_topic or t in self._passthrough_topics:
                     continue
                 candidates = [
                     (ts_, msg_)
@@ -566,18 +589,17 @@ class Exporter:
                     pass
                 else:
                     # Enqueue master first (already filtered), then
-                    # filter and enqueue remaining topics. Skip master
-                    # in the inner loop to avoid double-filtering.
+                    # filter and enqueue remaining topics (skip passthrough).
                     self._enqueue_export_task(master_topic, master_filtered, master_ts=master_ts)
                     for t, m in frame.items():
-                        if t == master_topic:
+                        if t == master_topic or t in self._passthrough_topics:
                             continue
                         m = self._apply_filters(t, m)
                         if m is not None:
                             self._enqueue_export_task(t, m, master_ts=master_ts)
             else:
                 for t in self.config:
-                    if t == master_topic:
+                    if t == master_topic or t in self._passthrough_topics:
                         continue
                     if not any(
                         abs(ts_ - master_ts) <= discard_eps_ns for ts_, _ in buffers[t]):

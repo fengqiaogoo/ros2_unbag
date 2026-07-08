@@ -50,6 +50,7 @@
     "/pose": {
         "format": "text/json@single_file",
         "naming": "%name",
+        "passthrough": true,
         "path": "%bag_name_unbag",
         "processors": [
         ],
