@@ -1,0 +1,31 @@
+name: bloom-release
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      ros_distro:
+        description: Space-separated ROS distros to release to
+        required: false
+        default: rolling humble jazzy lyrical
+
+permissions:
+  contents: read
+
+jobs:
+  bloom-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bloom release
+        uses: at-wat/bloom-release-action@2eca6e7fdc89793e2f27d59b5c14c86fc4bf9f4e # v0.0.13
+        with:
+          ros_distro: ${{ inputs.ros_distro || 'rolling humble jazzy lyrical' }}
+          github_token_bloom: ${{ secrets.BLOOM_GITHUB_TOKEN }}
+          github_user: ${{ vars.BLOOM_GITHUB_USER }}
+          git_user: ${{ vars.BLOOM_GIT_USER }}
+          git_email: ${{ vars.BLOOM_GIT_EMAIL }}
+          open_pr: true
