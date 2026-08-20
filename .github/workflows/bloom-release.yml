@@ -23,6 +23,7 @@ jobs:
       - name: bloom release
         uses: at-wat/bloom-release-action@v0.0.13
         with:
+          repository: unbag
           ros_distro: ${{ inputs.ros_distro || 'rolling humble jazzy lyrical' }}
           github_token_bloom: ${{ secrets.BLOOM_GITHUB_TOKEN }}
           github_user: ${{ vars.BLOOM_GITHUB_USER }}
