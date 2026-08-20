@@ -18,14 +18,15 @@ jobs:
   bloom-release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
+      - name: checkout
+        uses: actions/checkout@v7.0.1
       - name: bloom release
         uses: at-wat/bloom-release-action@v0.0.13
         with:
+          repository: unbag
           ros_distro: ${{ inputs.ros_distro || 'rolling humble jazzy lyrical' }}
           github_token_bloom: ${{ secrets.BLOOM_GITHUB_TOKEN }}
           github_user: ${{ vars.BLOOM_GITHUB_USER }}
           git_user: ${{ vars.BLOOM_GIT_USER }}
           git_email: ${{ vars.BLOOM_GIT_EMAIL }}
-          #open_pr: true
+          open_pr: true
