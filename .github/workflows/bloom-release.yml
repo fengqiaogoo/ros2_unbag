@@ -2,8 +2,11 @@ name: bloom-release
 
 on:
   push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+    paths:
+      - package.xml
+      - '*/package.xml'
+    branches:
+      - master
   workflow_dispatch:
     inputs:
       ros_distro:
@@ -18,8 +21,8 @@ jobs:
   bloom-release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
+      - name: checkout
+        uses: actions/checkout@v7.0.1
       - name: bloom release
         uses: at-wat/bloom-release-action@v0.0.13
         with:
@@ -29,4 +32,5 @@ jobs:
           github_user: ${{ vars.BLOOM_GITHUB_USER }}
           git_user: ${{ vars.BLOOM_GIT_USER }}
           git_email: ${{ vars.BLOOM_GIT_EMAIL }}
+          tag_and_release: true
           #open_pr: true
